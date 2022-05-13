@@ -1,0 +1,3 @@
+(executable
+ (name main)
+ (libraries effect_poll))

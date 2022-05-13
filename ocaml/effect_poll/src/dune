@@ -1,0 +1,3 @@
+(library
+ (public_name effect_poll)
+ (libraries poll))
