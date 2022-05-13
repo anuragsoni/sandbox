@@ -1,4 +1,4 @@
-# Anurag's scratchpad
+# Anurag's sandbox
 
 Small snippets of code in various programming languages, used for exploring different programming languages, learning about new programming language constructs or just to have an easy-to-use example for later reference.
 
