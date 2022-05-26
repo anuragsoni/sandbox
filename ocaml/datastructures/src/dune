@@ -1,0 +1,3 @@
+(executables
+ (names test_stack)
+ (libraries vessel unix))
