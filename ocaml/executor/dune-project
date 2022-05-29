@@ -1,0 +1,18 @@
+(lang dune 3.1)
+
+(name executor)
+
+(generate_opam_files true)
+
+(source
+ (github anuragsoni/sandbox))
+
+(authors "Anurag Soni")
+
+(maintainers "Anurag Soni")
+
+(license BSD-3-clause)
+
+(package
+ (name executor)
+ (depends ocaml dune))
