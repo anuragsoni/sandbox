@@ -8,25 +8,32 @@ type t =
   }
 
 let rec run idx jobs =
-  (* Attempt to steal a job from the list of job queues. We use [try_pop] here so the
-     thread isn't suspended. *)
-  let rec loop n limit =
-    if n >= limit
-    then None
-    else (
-      match Threadsafe_queue.try_pop (Array.get jobs ((idx + n) mod limit)) with
-      | None -> loop (n + 1) limit
-      | Some job -> Some job)
-  in
-  match loop 0 (Array.length jobs) with
+  let current_job_queue = Array.get jobs idx in
+  (* Check if we can make progress with this thread's run queue *)
+  match Threadsafe_queue.try_pop current_job_queue with
   | None ->
-    (* No jobs were found. Use [pop] to block til the job queue for the current thread has
-       an available job. *)
-    let fn = Threadsafe_queue.pop (Array.get jobs idx) in
-    fn ();
-    run idx jobs
+    (* Attempt to steal a job from the list of job queues. We use [try_pop] here so the
+       thread isn't suspended. *)
+    let rec loop n limit =
+      if n >= limit
+      then None
+      else (
+        match Threadsafe_queue.try_pop (Array.get jobs ((idx + n) mod limit)) with
+        | None -> loop (n + 1) limit
+        | Some job -> Some job)
+    in
+    (match loop 0 (Array.length jobs) with
+    | None ->
+      (* No jobs were found. Use [pop] to block til the job queue for the current thread
+         has an available job. *)
+      let fn = Threadsafe_queue.pop current_job_queue in
+      fn ();
+      run idx jobs
+    | Some job ->
+      (* Successfully stole a job *)
+      job ();
+      run idx jobs)
   | Some job ->
-    (* Successfully stole a job *)
     job ();
     run idx jobs
 ;;
