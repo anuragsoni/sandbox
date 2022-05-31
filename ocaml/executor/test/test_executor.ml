@@ -1,32 +1,60 @@
-let create_sock port =
-  let socket = Unix.socket ~cloexec:true Unix.PF_INET Unix.SOCK_STREAM 0 in
-  Unix.bind socket (Unix.ADDR_INET (Unix.inet_addr_loopback, port));
-  Unix.listen socket 128;
-  socket
-;;
+module Promise = struct
+  type 'a state =
+    | Resolved of 'a
+    | Pending
 
-let client_loop client_sock _executor =
-  let buf = Bytes.create 1024 in
-  let rec loop () =
-    let count = Unix.read client_sock buf 0 1024 in
-    if count = 0
-    then ()
-    else (
-      ignore (Unix.write client_sock buf 0 count : int);
-      loop ())
-  in
-  loop ()
-;;
+  type 'a t =
+    { mutable state : 'a state
+    ; mutex : Mutex.t
+    ; cond : Condition.t
+    }
 
-let rec server_loop sock executor =
-  let client_fd, _ = Unix.accept sock in
-  Executor.async executor (fun () -> client_loop client_fd executor);
-  server_loop sock executor
+  let create () = { state = Pending; mutex = Mutex.create (); cond = Condition.create () }
+
+  let fill t v =
+    Mutex.lock t.mutex;
+    match t.state with
+    | Pending ->
+      t.state <- Resolved v;
+      Mutex.unlock t.mutex;
+      Condition.broadcast t.cond
+    | Resolved _ -> failwith "Attempting to resolve a fulfilled promise"
+  ;;
+
+  let read t =
+    match t.state with
+    | Resolved v -> v
+    | Pending ->
+      Mutex.lock t.mutex;
+      (match t.state with
+      | Resolved v ->
+        Mutex.unlock t.mutex;
+        v
+      | Pending ->
+        Condition.wait t.cond t.mutex;
+        Mutex.unlock t.mutex;
+        (match t.state with
+        | Resolved v -> v
+        | Pending -> assert false))
+  ;;
+end
+
+let execute_task executor fn =
+  let p = Promise.create () in
+  Executor.async executor (fun () ->
+      Printf.printf "Hello from %d\n%!" (Domain.self () :> int);
+      let v = fn () in
+      Promise.fill p v);
+  p
 ;;
 
 let () =
-  let port = int_of_string Sys.argv.(1) in
   let executor = Executor.create () in
-  let sock = create_sock port in
-  server_loop sock executor
+  let promise_a = execute_task executor (fun () -> Unix.sleep 1) in
+  let promise_b = execute_task executor (fun () -> 1 + 2) in
+  let promise_c = execute_task executor (fun () -> 3) in
+  let result_b = Promise.read promise_b in
+  let result_c = Promise.read promise_c in
+  Printf.printf "Result: %d\n%!" (result_b + result_c);
+  Promise.read promise_a
 ;;
