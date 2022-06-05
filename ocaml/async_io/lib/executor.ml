@@ -63,9 +63,7 @@ let rec run idx state =
     if Hashtbl.length current_state.read_continuations = 0
        && Hashtbl.length current_state.write_continuations = 0
     then (
-      let job = Threadsafe_queue.pop current_job_queue in
-      let job = Optional_thunk.unsafe_fn job in
-      run_job current_state job;
+      Domain.cpu_relax ();
       run idx state)
     else perform_io idx state
   | job ->
