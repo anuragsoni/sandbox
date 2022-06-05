@@ -1,6 +1,6 @@
 (library
  (public_name async_io)
- (libraries unix poll)
+ (libraries unix poll lockfree)
  (foreign_stubs
   (language c)
   (names num_cpus_stubs)))
