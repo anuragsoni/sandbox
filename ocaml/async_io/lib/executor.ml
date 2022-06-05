@@ -3,17 +3,15 @@ open! Types
 type read = (unit, unit) Effect.Deep.continuation
 type write = (unit, unit) Effect.Deep.continuation
 
-module LQ = Lockfree.Ws_deque.M
-
 type state =
-  { jobs : (unit -> unit) LQ.t
+  { jobs : Threadsafe_queue.t
   ; poll : Poll.t
   ; read_continuations : (Unix.file_descr, read) Hashtbl.t
   ; write_continuations : (Unix.file_descr, write) Hashtbl.t
   }
 
 let init_state () =
-  let jobs = LQ.create () in
+  let jobs = Threadsafe_queue.create () in
   let poll = Poll.create () in
   { jobs
   ; poll
@@ -22,7 +20,11 @@ let init_state () =
   }
 ;;
 
-let enqueue_cont state cont = LQ.push state.jobs (fun () -> Effect.Deep.continue cont ())
+let enqueue_cont state cont =
+  Threadsafe_queue.push
+    state.jobs
+    (Optional_thunk.some (fun () -> Effect.Deep.continue cont ()))
+;;
 
 type t =
   { domains : unit Domain.t Array.t
@@ -56,17 +58,18 @@ let rec run idx state =
   let current_state = Array.unsafe_get state idx in
   let current_job_queue = current_state.jobs in
   (* Check if we can make progress with this thread's run queue *)
-  match LQ.pop current_job_queue with
-  | job ->
-    run_job current_state job;
-    run idx state
-  | exception Exit ->
+  match Threadsafe_queue.try_pop current_job_queue with
+  | job when Optional_thunk.is_none job ->
     if Hashtbl.length current_state.read_continuations = 0
        && Hashtbl.length current_state.write_continuations = 0
     then (
       Domain.cpu_relax ();
       run idx state)
     else perform_io idx state
+  | job ->
+    let job = Optional_thunk.unsafe_fn job in
+    run_job current_state job;
+    run idx state
 
 and perform_io idx state =
   let current_state = Array.unsafe_get state idx in
@@ -104,5 +107,18 @@ let create () =
 
 let async t fn =
   let i = Atomic.fetch_and_add t.index 1 in
-  LQ.push (Array.get t.state (i mod Array.length t.state)).jobs fn
+  let fn = Optional_thunk.some fn in
+  let rec loop i n state job =
+    if n >= Array.length state
+    then
+      (* We couldn't push the job to any of the job queues. Use [push] so the thread
+         blocks. *)
+      Threadsafe_queue.push (Array.get t.state (i mod Array.length t.state)).jobs job
+    else (
+      (* Attempt to push a job using [try_push]. If this succeeds the job will be enqueued
+         without the thread being suspended. *)
+      let job_queue = (Array.get state ((i + n) mod Array.length state)).jobs in
+      if not (Threadsafe_queue.try_push job_queue job) then loop i (n + 1) state job)
+  in
+  loop i 0 t.state fn
 ;;
