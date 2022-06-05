@@ -1,0 +1,3 @@
+(executable
+ (name test_async_io)
+ (libraries async_io unix))
