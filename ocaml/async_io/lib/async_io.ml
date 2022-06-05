@@ -1,23 +1,22 @@
+open Types
+
 module Std = struct
   module Task = Task
+  module Async_unix = Async_unix
 end
 
-type t = { executor : Executor.t }
-
-let create () = { executor = Executor.create () }
-
-let main fn =
-  let t = create () in
+let run main =
+  let executor = Executor.create () in
   Effect.Deep.try_with
-    fn
+    main
     ()
     { effc =
         (fun (type a) (e : a Effect.t) ->
           match e with
-          | Types.Spawn fn ->
+          | Spawn task ->
             Some
               (fun (k : (a, _) Effect.Deep.continuation) ->
-                Executor.async t.executor fn;
+                Executor.async executor task;
                 Effect.Deep.continue k ())
           | _ -> None)
     }

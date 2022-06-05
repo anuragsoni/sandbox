@@ -11,3 +11,5 @@ let is_none fn = fn == none
 let is_some fn = not (is_none fn)
 let call_if_some fn = if is_some fn then fn ()
 let unsafe_call fn = fn ()
+
+let unsafe_fn fn = fn
