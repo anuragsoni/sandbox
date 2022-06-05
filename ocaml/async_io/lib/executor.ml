@@ -60,13 +60,30 @@ let rec run idx state =
   (* Check if we can make progress with this thread's run queue *)
   match Threadsafe_queue.try_pop current_job_queue with
   | job when Optional_thunk.is_none job ->
+    (* Attempt to steal a job from the list of job queues. We use [try_pop] here so the
+       thread isn't suspended. *)
+    let rec loop n limit =
+      if n >= limit
+      then Optional_thunk.none
+      else (
+        match Threadsafe_queue.try_pop (Array.get state ((idx + n) mod limit)).jobs with
+        | job when Optional_thunk.is_none job -> loop (n + 1) limit
+        | job -> job)
+    in
     if Hashtbl.length current_state.read_continuations = 0
        && Hashtbl.length current_state.write_continuations = 0
     then (
-      let job = Threadsafe_queue.pop current_job_queue in
-      let job = Optional_thunk.unsafe_fn job in
-      run_job current_state job;
-      run idx state)
+      match loop 0 (Array.length state) with
+      | job when Optional_thunk.is_none job ->
+        let job = Threadsafe_queue.pop current_job_queue in
+        let job = Optional_thunk.unsafe_fn job in
+        run_job current_state job;
+        run idx state
+      | job ->
+        print_endline "stole job";
+        let job = Optional_thunk.unsafe_fn job in
+        run_job current_state job;
+        run idx state)
     else perform_io idx state
   | job ->
     let job = Optional_thunk.unsafe_fn job in
