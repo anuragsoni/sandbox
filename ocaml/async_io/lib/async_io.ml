@@ -2,6 +2,7 @@ open Types
 
 module Std = struct
   module Task = Task
+  module Fd = Fd
   module Async_unix = Async_unix
 end
 

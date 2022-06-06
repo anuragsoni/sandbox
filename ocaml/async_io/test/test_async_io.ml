@@ -13,10 +13,10 @@ let echo_loop sock =
   let buf = Bytes.create 1024 in
   try
     let rec loop sock buf =
-      let count = Async_unix.Fd.read sock buf ~pos:0 ~len:1024 in
+      let count = Fd.read sock buf ~pos:0 ~len:1024 in
       if count > 0
       then (
-        let (_ : int) = Async_unix.Fd.write sock buf ~pos:0 ~len:count in
+        let (_ : int) = Fd.write sock buf ~pos:0 ~len:count in
         loop sock buf)
     in
     loop sock buf;
