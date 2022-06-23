@@ -5,8 +5,9 @@ let create_sock port =
   let sock = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
   Unix.setsockopt sock Unix.SO_REUSEADDR true;
   Unix.bind sock sock_addr;
+  Unix.set_nonblock sock;
   Unix.listen sock 256;
-  sock
+  Fd.create sock
 ;;
 
 let close_sock sock =
@@ -60,6 +61,32 @@ let echo_loop fd =
   | _ -> Fd.close fd
 ;;
 
+let rec accept fd =
+  Fd.syscall_exn fd () (fun sock () ->
+      match Unix.accept sock with
+      | client_sock, _ ->
+        Unix.set_nonblock client_sock;
+        `Ok (Fd.create client_sock)
+      | exception Unix.Unix_error ((EWOULDBLOCK | EAGAIN | EINTR), _, _) ->
+        (match Fd.ready_to fd `Read with
+        | `Ready -> accept fd
+        | `Closed -> `Eof)
+      | exception
+          Unix.Unix_error
+            ( ( EPIPE
+              | ECONNRESET
+              | EHOSTUNREACH
+              | ENETDOWN
+              | ENETRESET
+              | ENETUNREACH
+              | ETIMEDOUT )
+            , _
+            , _ ) -> `Eof
+      | exception exn ->
+        Printf.printf "%s\n%!" (Printexc.to_string exn);
+        `Eof)
+;;
+
 let () =
   Printexc.record_backtrace true;
   let port = int_of_string Sys.argv.(1) in
@@ -70,14 +97,15 @@ let () =
   let sock = create_sock port in
   Printf.printf "Listening on http://localhost:%d\n%!" port;
   Scheduler.run ?num_threads (fun () ->
+      let stop = ref false in
       try
-        while true do
-          let client_sock, _ = Unix.accept sock in
-          Unix.set_nonblock client_sock;
-          Task.spawn (fun () -> echo_loop (Fd.create client_sock))
+        while not !stop do
+          match accept sock with
+          | `Ok client_sock -> Task.spawn (fun () -> echo_loop client_sock)
+          | `Eof -> stop := true
         done
       with
       | exn ->
         Printf.printf "%s\n%!" (Printexc.to_string exn);
-        close_sock sock)
+        Fd.close sock)
 ;;
