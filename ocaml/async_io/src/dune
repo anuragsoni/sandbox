@@ -1,0 +1,6 @@
+(library
+ (public_name async_io)
+ (libraries poll mtime.clock.os psq)
+ (foreign_stubs
+  (language c)
+  (names num_cpus_stubs)))
