@@ -50,3 +50,27 @@ let push t fn =
   if was_empty then Condition.signal t.not_empty;
   Mutex.unlock t.mutex
 ;;
+
+let steal t1 t2 =
+  if Mutex.try_lock t1.mutex
+  then
+    if Queue.is_empty t1.queue
+    then (
+      Mutex.unlock t1.mutex;
+      false)
+    else (
+      let length = Queue.length t1.queue in
+      let to_steal = max 1 (length / 2) in
+      if Mutex.try_lock t2.mutex
+      then (
+        for i = 0 to to_steal - 1 do
+          Queue.push (Queue.pop t1.queue) t2.queue
+        done;
+        Mutex.unlock t2.mutex;
+        Mutex.unlock t1.mutex;
+        true)
+      else (
+        Mutex.unlock t1.mutex;
+        false))
+  else false
+;;
