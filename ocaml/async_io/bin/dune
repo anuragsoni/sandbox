@@ -1,0 +1,3 @@
+(executables
+ (names test_timer echo)
+ (libraries async_io ptime.clock.os))
