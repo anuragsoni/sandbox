@@ -46,7 +46,7 @@ let enqueue t fn =
 
 let perform_io ~timeout t =
   match Poll.wait t.poll timeout with
-  | `Timeout -> false
+  | `Timeout -> ()
   | `Ok ->
     Poll.iter_ready t.poll ~f:(fun fd event ->
         if event.Poll.Event.readable
@@ -68,8 +68,7 @@ let perform_io ~timeout t =
           with
           | Not_found -> ());
         Poll.set t.poll fd Poll.Event.none);
-    Poll.clear t.poll;
-    true
+    Poll.clear t.poll
 ;;
 
 let get_job t =
@@ -132,25 +131,43 @@ let run_job t job =
     }
 ;;
 
-let run t =
-  while not (Atomic.get t.shutdown) do
-    match get_job t with
+let rec run t =
+  if Atomic.get t.shutdown
+  then ()
+  else (
+    match Threadsafe_queue.try_pop t.queue with
     | job when Optional_thunk.is_none job ->
-      let next_timeout =
-        if Timer.has_events t.timer
-        then (
-          let now = Mtime_clock.now () in
-          Timer.advance_timer t.timer ~now ~push:(fun k ->
-              enqueue t (fun () -> Effect.Deep.continue k ()));
-          Timer.next_wakeup_at ~now t.timer)
-        else Poll.Timeout.after 50_000_000L
-      in
       if Fd_table.length t.fd_events = 0
-      then Domain.cpu_relax ()
-      else if not (perform_io ~timeout:next_timeout t)
-      then Domain.cpu_relax ()
-    | job -> run_job t job
-  done
+      then (
+        let rec loop n limit =
+          if n >= limit
+          then false
+          else if t.queue == Array.get t.queues ((t.id + n) mod limit)
+          then loop (n + 1) limit
+          else
+            Threadsafe_queue.steal (Array.get t.queues ((t.id + n) mod limit)) t.queue
+            || loop (n + 1) limit
+        in
+        if loop 0 t.size
+        then run t
+        else (
+          Domain.cpu_relax ();
+          run t))
+      else (
+        let next_timeout =
+          if Timer.has_events t.timer
+          then (
+            let now = Mtime_clock.now () in
+            Timer.advance_timer t.timer ~now ~push:(fun k ->
+                enqueue t (fun () -> Effect.Deep.continue k ()));
+            Timer.next_wakeup_at ~now t.timer)
+          else Poll.Timeout.after 50_000_000L
+        in
+        perform_io ~timeout:next_timeout t;
+        run t)
+    | job ->
+      run_job t job;
+      run t)
 ;;
 
 let shutdown t = Atomic.set t.shutdown true
