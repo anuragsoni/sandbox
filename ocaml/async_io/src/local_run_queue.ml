@@ -1,5 +1,6 @@
 type t =
   { queue : Threadsafe_queue.t
+  ; local_queue : Optional_thunk.t Queue.t
   ; id : int
   ; queues : Threadsafe_queue.t array
   ; poll : Poll.t
@@ -13,6 +14,7 @@ type t =
 let create idx queues =
   let queue = Array.get queues idx in
   { queue
+  ; local_queue = Queue.create ()
   ; id = idx
   ; queues
   ; poll = Poll.create ~num_events:64 ()
@@ -26,6 +28,17 @@ let create idx queues =
 
 let push_job t fn = Threadsafe_queue.push t.queue fn
 let try_push t fn = Threadsafe_queue.try_push t.queue fn
+
+let push_local t fn =
+  let fn = Optional_thunk.some fn in
+  Queue.push fn t.local_queue
+;;
+
+let try_pop_local t =
+  match Queue.pop t.local_queue with
+  | job -> job
+  | exception Queue.Empty -> Optional_thunk.none
+;;
 
 let enqueue t fn =
   let i = Atomic.fetch_and_add t.task_count 1 in
@@ -55,7 +68,7 @@ let perform_io ~timeout t =
             let k = Fd_table.find t.fd_events fd in
             Fd_table.remove t.fd_events fd;
             let job () = Effect.Deep.continue k () in
-            push_job t job
+            push_local t job
           with
           | Not_found -> ());
         if event.Poll.Event.writable
@@ -64,7 +77,7 @@ let perform_io ~timeout t =
             let k = Fd_table.find t.fd_events fd in
             Fd_table.remove t.fd_events fd;
             let job () = Effect.Deep.continue k () in
-            push_job t job
+            push_local t job
           with
           | Not_found -> ());
         Poll.set t.poll fd Poll.Event.none);
@@ -120,7 +133,8 @@ let run_job t job =
                     Fd_table.remove t.fd_events fd)
                 in
                 enqueue_on_close on_close)
-          | Task.Yield -> Some (fun k -> push_job t (fun () -> Effect.Deep.continue k ()))
+          | Task.Yield ->
+            Some (fun k -> push_local t (fun () -> Effect.Deep.continue k ()))
           | Task.Spawn fn ->
             Some
               (fun k ->
@@ -135,35 +149,40 @@ let rec run t =
   if Atomic.get t.shutdown
   then ()
   else (
-    match Threadsafe_queue.try_pop t.queue with
+    match try_pop_local t with
     | job when Optional_thunk.is_none job ->
-      if Fd_table.length t.fd_events = 0
-      then (
-        let rec loop n limit =
-          if n >= limit
-          then false
-          else if t.queue == Array.get t.queues ((t.id + n) mod limit)
-          then loop (n + 1) limit
-          else
-            Threadsafe_queue.steal (Array.get t.queues ((t.id + n) mod limit)) t.queue
-            || loop (n + 1) limit
-        in
-        if loop 0 t.size
-        then run t
+      (match Threadsafe_queue.try_pop t.queue with
+      | job when Optional_thunk.is_none job ->
+        if Fd_table.length t.fd_events = 0
+        then (
+          let rec loop n limit =
+            if n >= limit
+            then false
+            else if t.queue == Array.get t.queues ((t.id + n) mod limit)
+            then loop (n + 1) limit
+            else
+              Threadsafe_queue.steal (Array.get t.queues ((t.id + n) mod limit)) t.queue
+              || loop (n + 1) limit
+          in
+          if loop 0 t.size
+          then run t
+          else (
+            Domain.cpu_relax ();
+            run t))
         else (
-          Domain.cpu_relax ();
-          run t))
-      else (
-        let next_timeout =
-          if Timer.has_events t.timer
-          then (
-            let now = Mtime_clock.now () in
-            Timer.advance_timer t.timer ~now ~push:(fun k ->
-                enqueue t (fun () -> Effect.Deep.continue k ()));
-            Timer.next_wakeup_at ~now t.timer)
-          else Poll.Timeout.after 50_000_000L
-        in
-        perform_io ~timeout:next_timeout t;
+          let next_timeout =
+            if Timer.has_events t.timer
+            then (
+              let now = Mtime_clock.now () in
+              Timer.advance_timer t.timer ~now ~push:(fun k ->
+                  push_local t (fun () -> Effect.Deep.continue k ()));
+              Timer.next_wakeup_at ~now t.timer)
+            else Poll.Timeout.after 50_000_000L
+          in
+          perform_io ~timeout:next_timeout t;
+          run t)
+      | job ->
+        run_job t job;
         run t)
     | job ->
       run_job t job;
