@@ -1,6 +1,6 @@
 type t =
   { queues : Local_run_queue.t array
-  ; domains : unit Domain.t array
+  ; queue : Local_run_queue.t
   ; task_count : int Atomic.t
   ; size : int
   }
@@ -29,27 +29,23 @@ let create ?num_threads () =
     invalid_arg (Printf.sprintf "Invalid number of threads for scheduler: %d" num_threads);
   let queues = Array.init num_threads (fun _ -> Threadsafe_queue.create ()) in
   let queues = Array.init num_threads (fun i -> Local_run_queue.create i queues) in
-  let domains =
-    Array.map (fun queue -> Domain.spawn (fun () -> Local_run_queue.run queue)) queues
-  in
-  { queues; domains; task_count = Atomic.make 0; size = num_threads }
+  let queue = Array.get queues 0 in
+  { queue; queues; task_count = Atomic.make 0; size = num_threads }
 ;;
 
 let shutdown t = Array.iter (fun q -> Local_run_queue.shutdown q) t.queues
 
 let run ?num_threads main =
   let t = create ?num_threads () in
-  Effect.Deep.try_with
-    main
-    ()
-    { effc =
-        (fun (type a) (e : a Effect.t) ->
-          match e with
-          | Task.Spawn task ->
-            Some
-              (fun (k : (a, _) Effect.Deep.continuation) ->
-                enqueue t task;
-                Effect.Deep.continue k ())
-          | _ -> None)
-    }
+  enqueue t main;
+  let domains =
+    if t.size = 1
+    then [||]
+    else
+      Array.init (t.size - 1) (fun i ->
+          let q = t.queues.(i + 1) in
+          Domain.spawn (fun () -> Local_run_queue.run q))
+  in
+  Local_run_queue.run t.queue;
+  Array.iter (fun d -> Domain.join d) domains
 ;;

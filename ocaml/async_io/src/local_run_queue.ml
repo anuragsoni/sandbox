@@ -7,6 +7,7 @@ type t =
   ; fd_events : (unit, unit) Effect.Deep.continuation Fd_table.t
   ; shutdown : bool Atomic.t
   ; size : int
+  ; task_count : int Atomic.t
   }
 
 let create idx queues =
@@ -19,11 +20,29 @@ let create idx queues =
   ; shutdown = Atomic.make false
   ; timer = Timer.create ()
   ; size = Array.length queues
+  ; task_count = Atomic.make 0
   }
 ;;
 
 let push_job t fn = Threadsafe_queue.push t.queue fn
 let try_push t fn = Threadsafe_queue.try_push t.queue fn
+
+let enqueue t fn =
+  let i = Atomic.fetch_and_add t.task_count 1 in
+  let rec loop i n jobs job =
+    if n >= Array.length jobs
+    then
+      (* We couldn't push the job to any of the job queues. Use [push] so the thread
+         blocks. *)
+      Threadsafe_queue.push (Array.get t.queues (i mod t.size)) job
+    else (
+      (* Attempt to push a job using [try_push]. If this succeeds the job will be enqueued
+         without the thread being suspended. *)
+      let job_queue = Array.get jobs ((i + n) mod Array.length jobs) in
+      if not (Threadsafe_queue.try_push job_queue job) then loop i (n + 1) jobs job)
+  in
+  loop i 0 t.queues fn
+;;
 
 let perform_io ~timeout t =
   match Poll.wait t.poll timeout with
@@ -53,7 +72,22 @@ let perform_io ~timeout t =
     true
 ;;
 
-let get_job t = Threadsafe_queue.try_pop t.queue
+let get_job t =
+  match Threadsafe_queue.try_pop t.queue with
+  | job when Optional_thunk.is_none job ->
+    (* Attempt to steal a job from the list of job queues. We use [try_pop] here so the
+       thread isn't suspended. *)
+    let rec loop n limit =
+      if n >= limit
+      then Optional_thunk.none
+      else (
+        match Threadsafe_queue.try_pop (Array.get t.queues ((t.id + n) mod limit)) with
+        | job when Optional_thunk.is_none job -> loop (n + 1) limit
+        | job -> job)
+    in
+    loop 0 t.size
+  | job -> job
+;;
 
 let run_job t job =
   let job = Optional_thunk.unsafe_fn job in
@@ -91,7 +125,7 @@ let run_job t job =
           | Task.Spawn fn ->
             Some
               (fun k ->
-                push_job t fn;
+                enqueue t fn;
                 Effect.Deep.continue k ())
           | Timer.Wakup_at at -> Some (fun k -> Timer.add t.timer ~at k)
           | _ -> None)
@@ -107,7 +141,7 @@ let run t =
         then (
           let now = Mtime_clock.now () in
           Timer.advance_timer t.timer ~now ~push:(fun k ->
-              push_job t (fun () -> Effect.Deep.continue k ()));
+              enqueue t (fun () -> Effect.Deep.continue k ()));
           Timer.next_wakeup_at ~now t.timer)
         else Poll.Timeout.after 50_000_000L
       in
