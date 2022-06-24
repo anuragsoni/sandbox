@@ -10,14 +10,6 @@ let create_sock port =
   Fd.create sock
 ;;
 
-let close_sock sock =
-  try
-    Unix.shutdown sock Unix.SHUTDOWN_ALL;
-    Unix.close sock
-  with
-  | _ -> ()
-;;
-
 let echo_loop fd =
   let buf = Bytes.create 1024 in
   try

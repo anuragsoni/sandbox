@@ -63,7 +63,7 @@ let steal t1 t2 =
       let to_steal = max 1 (length / 2) in
       if Mutex.try_lock t2.mutex
       then (
-        for i = 0 to to_steal - 1 do
+        for _ = 0 to to_steal - 1 do
           Queue.push (Queue.pop t1.queue) t2.queue
         done;
         Mutex.unlock t2.mutex;
