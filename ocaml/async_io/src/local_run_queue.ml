@@ -143,7 +143,7 @@ let run_job t job =
     }
 ;;
 
-let rec run t =
+let run t =
   while not (Atomic.get t.shutdown) do
     match try_pop_local t with
     | job when Optional_thunk.is_none job ->
