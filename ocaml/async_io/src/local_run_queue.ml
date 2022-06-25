@@ -37,7 +37,7 @@ let push_local t fn =
 let try_pop_local t =
   match Queue.pop t.local_queue with
   | job -> job
-  | exception Queue.Empty -> Optional_thunk.none
+  | exception Queue.Empty -> Threadsafe_queue.try_pop t.queue
 ;;
 
 let enqueue t fn =
@@ -59,7 +59,7 @@ let enqueue t fn =
 
 let perform_io ~timeout t =
   match Poll.wait t.poll timeout with
-  | `Timeout -> ()
+  | `Timeout -> false
   | `Ok ->
     Poll.iter_ready t.poll ~f:(fun fd event ->
         if event.Poll.Event.readable
@@ -81,24 +81,22 @@ let perform_io ~timeout t =
           with
           | Not_found -> ());
         Poll.set t.poll fd Poll.Event.none);
-    Poll.clear t.poll
+    Poll.clear t.poll;
+    true
 ;;
 
-let get_job t =
-  match Threadsafe_queue.try_pop t.queue with
-  | job when Optional_thunk.is_none job ->
-    (* Attempt to steal a job from the list of job queues. We use [try_pop] here so the
-       thread isn't suspended. *)
-    let rec loop n limit =
-      if n >= limit
-      then Optional_thunk.none
-      else (
-        match Threadsafe_queue.try_pop (Array.get t.queues ((t.id + n) mod limit)) with
-        | job when Optional_thunk.is_none job -> loop (n + 1) limit
-        | job -> job)
-    in
-    loop 0 t.size
-  | job -> job
+let try_steal_job t =
+  (* Attempt to steal a job from the list of job queues. We use [try_pop] here so the
+     thread isn't suspended. *)
+  let rec loop n limit =
+    if n >= limit
+    then Optional_thunk.none
+    else (
+      match Threadsafe_queue.try_pop (Array.get t.queues ((t.id + n) mod limit)) with
+      | job when Optional_thunk.is_none job -> loop (n + 1) limit
+      | job -> job)
+  in
+  loop 0 t.size
 ;;
 
 let run_job t job =
@@ -146,47 +144,27 @@ let run_job t job =
 ;;
 
 let rec run t =
-  if Atomic.get t.shutdown
-  then ()
-  else (
+  while not (Atomic.get t.shutdown) do
     match try_pop_local t with
     | job when Optional_thunk.is_none job ->
-      (match Threadsafe_queue.try_pop t.queue with
-      | job when Optional_thunk.is_none job ->
-        if Fd_table.length t.fd_events = 0
+      let next_timeout =
+        if Timer.has_events t.timer
         then (
-          let rec loop n limit =
-            if n >= limit
-            then false
-            else if t.queue == Array.get t.queues ((t.id + n) mod limit)
-            then loop (n + 1) limit
-            else
-              Threadsafe_queue.steal (Array.get t.queues ((t.id + n) mod limit)) t.queue
-              || loop (n + 1) limit
-          in
-          if loop 0 t.size
-          then run t
-          else (
-            Domain.cpu_relax ();
-            run t))
-        else (
-          let next_timeout =
-            if Timer.has_events t.timer
-            then (
-              let now = Mtime_clock.now () in
-              Timer.advance_timer t.timer ~now ~push:(fun k ->
-                  push_local t (fun () -> Effect.Deep.continue k ()));
-              Timer.next_wakeup_at ~now t.timer)
-            else Poll.Timeout.after 50_000_000L
-          in
-          perform_io ~timeout:next_timeout t;
-          run t)
-      | job ->
-        run_job t job;
-        run t)
-    | job ->
-      run_job t job;
-      run t)
+          let now = Mtime_clock.now () in
+          Timer.advance_timer t.timer ~now ~push:(fun k ->
+              push_local t (fun () -> Effect.Deep.continue k ()));
+          Timer.next_wakeup_at ~now t.timer)
+        else Poll.Timeout.after 50_000_000L
+      in
+      if Fd_table.length t.fd_events = 0 || not (perform_io ~timeout:next_timeout t)
+      then (
+        (* [perform_io] did not enqueue any new jobs to the local queue. Attempt to steal
+           any pending tasks from sibling domains. *)
+        match try_steal_job t with
+        | job when Optional_thunk.is_none job -> Domain.cpu_relax ()
+        | job -> run_job t job)
+    | job -> run_job t job
+  done
 ;;
 
 let shutdown t = Atomic.set t.shutdown true
