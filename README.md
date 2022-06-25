@@ -9,5 +9,5 @@ Small snippets of code in various programming languages, used for exploring diff
     - Experiments with a simple multi-threaded task executor
 - [Async_io](./ocaml/async_io/)
     - Learning how a work-stealing multi-threade task executor works.
-    - Suitable for asynchronous I/O. Direct-style cooperative tasks usinf effects, and uses [poll](https://github.com/anuragsoni/poll) for leveraging the operating system's readiness event notifications for file descriptors.
+    - Suitable for asynchronous I/O. Direct-style cooperative tasks using effects, and uses [poll](https://github.com/anuragsoni/poll) for leveraging the operating system's readiness event notifications for file descriptors.
     - Timers for managing timed ocaml effects.

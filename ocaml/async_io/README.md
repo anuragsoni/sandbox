@@ -4,7 +4,7 @@ A multi-threaded executor that can be used for asynchronous I/O and timers.
 
 ## Implementation Notes
 
-- Tasks `unit -> unit` is the smallest unit of work.
+- Task `unit -> unit` is the smallest unit of work.
 - The async_io scheduler starts [n] worker domains. [n] equals the number of logical CPU cores.
 - Each worker domain contains a thread safe run queue that new tasks can be dispatched onto.
 - When a worker domain doesn't have any available tasks in its own run-queue, it attempts to steal a task from a sibling domain's run-queue.
