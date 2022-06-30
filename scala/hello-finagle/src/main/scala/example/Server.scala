@@ -7,8 +7,9 @@ import com.twitter.finagle.http.path._
 import com.twitter.finagle.Http
 import com.twitter.util.Await
 import com.twitter.conversions.DurationOps._
+import com.twitter.server.TwitterServer
 
-object Server extends App {
+object Server extends TwitterServer {
   def greet(name: String) = new Service[http.Request, http.Response] {
     def apply(request: http.Request): Future[http.Response] = {
       val response = http.Response(http.Status.Ok)
@@ -31,14 +32,19 @@ object Server extends App {
       case (http.Method.Get, Root / "greet" / name) => greet(name)
     }
 
-  val server =
-    Http.server.withAdmissionControl
-      .concurrencyLimit(maxConcurrentRequests = 1024)
-      .withSession
-      .maxLifeTime(20.seconds)
-      .withSession
-      .maxIdleTime(10.seconds)
-      .serve(":8080", service)
+  def main(): Unit = {
+    val server =
+      Http.server.withAdmissionControl
+        .concurrencyLimit(maxConcurrentRequests = 1024)
+        .withSession
+        .maxLifeTime(20.seconds)
+        .withSession
+        .maxIdleTime(10.seconds)
+        .withHttpStats
+        .withHttp2
+        .serve(":8080", service)
 
-  Await.ready(server)
+    Await.ready(server)
+  }
+
 }
