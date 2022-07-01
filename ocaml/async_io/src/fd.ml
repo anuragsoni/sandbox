@@ -6,8 +6,8 @@ type _ Effect.t +=
 
 type t =
   { fd : Unix.file_descr
-  ; on_close : (unit -> unit) list Atomic.t
-  ; closed : bool Atomic.t
+  ; mutable on_close : (unit -> unit) list
+  ; mutable closed : bool
   ; supports_nonblock : bool
   ; kind : Unix.file_kind
   }
@@ -22,27 +22,27 @@ let create fd =
     | S_SOCK -> true
     | S_BLK | S_DIR | S_REG | S_LNK -> false
   in
-  { fd; kind; supports_nonblock; closed = Atomic.make false; on_close = Atomic.make [] }
+  { fd; kind; supports_nonblock; closed = false; on_close = [] }
 ;;
 
 let wait_read t =
-  let rec push_on_close fn =
-    let old = Atomic.get t.on_close in
-    if not (Atomic.compare_and_set t.on_close old (fn :: old)) then push_on_close fn
+  let push_on_close fn =
+    let old = t.on_close in
+    t.on_close <- fn :: old
   in
   Effect.perform (Wait_read (t.fd, push_on_close))
 ;;
 
 let wait_write t =
-  let rec push_on_close fn =
-    let old = Atomic.get t.on_close in
-    if not (Atomic.compare_and_set t.on_close old (fn :: old)) then push_on_close fn
+  let push_on_close fn =
+    let old = t.on_close in
+    t.on_close <- fn :: old
   in
   Effect.perform (Wait_write (t.fd, push_on_close))
 ;;
 
 let ready_to t event =
-  if Atomic.get t.closed
+  if t.closed
   then `Closed
   else (
     let () =
@@ -50,23 +50,23 @@ let ready_to t event =
       | `Read -> wait_read t
       | `Write -> wait_write t
     in
-    if Atomic.get t.closed then `Closed else `Ready)
+    if t.closed then `Closed else `Ready)
 ;;
 
 let close t =
-  if not (Atomic.get t.closed)
+  if not t.closed
   then (
-    Atomic.set t.closed true;
+    t.closed <- true;
     (try Unix.close t.fd with
     | _ -> ());
-    let callbacks = Atomic.get t.on_close in
+    let callbacks = t.on_close in
     List.iter (fun fn -> fn ()) callbacks)
 ;;
 
-let is_closed t = Atomic.get t.closed
+let is_closed t = t.closed
 
 let syscall t a f =
-  if Atomic.get t.closed
+  if t.closed
   then `Already_closed
   else (
     try `Ok (f t.fd a) with
