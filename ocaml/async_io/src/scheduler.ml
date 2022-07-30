@@ -21,7 +21,7 @@ let enqueue t job =
 let create ?num_threads () =
   let num_threads =
     match num_threads with
-    | None -> Num_cpus.get ()
+    | None -> Domain.recommended_domain_count
     | Some c -> c
   in
   if num_threads < 1

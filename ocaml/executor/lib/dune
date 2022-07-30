@@ -1,5 +1,2 @@
 (library
- (public_name executor)
- (foreign_stubs
-  (language c)
-  (names num_cpus_stubs)))
+ (public_name executor))

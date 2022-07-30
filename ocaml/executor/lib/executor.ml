@@ -39,7 +39,7 @@ let rec run idx jobs =
 ;;
 
 let create () =
-  let size = Num_cpus.get () in
+  let size = Domain.recommended_domain_count in
   let jobs = Array.init size (fun _ -> Threadsafe_queue.create ()) in
   let run idx = run idx jobs in
   let domains = Array.init size (fun idx -> Domain.spawn (fun () -> run idx)) in
