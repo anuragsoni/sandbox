@@ -55,26 +55,26 @@ let rec schedule state =
 
 and perform_io state =
   (match Poll.wait state.poll Poll.Timeout.never with
-  | `Ok ->
-    Poll.iter_ready state.poll ~f:(fun fd event ->
-        if event.Poll.Event.readable
-        then (
-          try
-            let cont = Hashtbl.find state.read_continuations fd in
-            Hashtbl.remove state.read_continuations fd;
-            enqueue_read state cont
-          with
-          | Not_found -> ());
-        if event.writable
-        then (
-          try
-            let cont = Hashtbl.find state.write_continuations fd in
-            Hashtbl.remove state.write_continuations fd;
-            enqueue_write state cont
-          with
-          | Not_found -> ()));
-    Poll.clear state.poll
-  | `Timeout -> ());
+   | `Ok ->
+     Poll.iter_ready state.poll ~f:(fun fd event ->
+       if event.Poll.Event.readable
+       then (
+         try
+           let cont = Hashtbl.find state.read_continuations fd in
+           Hashtbl.remove state.read_continuations fd;
+           enqueue_read state cont
+         with
+         | Not_found -> ());
+       if event.writable
+       then (
+         try
+           let cont = Hashtbl.find state.write_continuations fd in
+           Hashtbl.remove state.write_continuations fd;
+           enqueue_write state cont
+         with
+         | Not_found -> ()));
+     Poll.clear state.poll
+   | `Timeout -> ());
   schedule state
 ;;
 

@@ -58,7 +58,7 @@ let close t =
   then (
     t.closed <- true;
     (try Unix.close t.fd with
-    | _ -> ());
+     | _ -> ());
     let callbacks = t.on_close in
     List.iter (fun fn -> fn ()) callbacks)
 ;;

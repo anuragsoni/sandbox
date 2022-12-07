@@ -23,23 +23,23 @@ let rec run idx jobs =
         | Some job -> Some job)
     in
     (match loop 0 (Array.length jobs) with
-    | None ->
-      (* No jobs were found. Use [pop] to block til the job queue for the current thread
-         has an available job. *)
-      let fn = Threadsafe_queue.pop current_job_queue in
-      fn ();
-      run idx jobs
-    | Some job ->
-      (* Successfully stole a job *)
-      job ();
-      run idx jobs)
+     | None ->
+       (* No jobs were found. Use [pop] to block til the job queue for the current thread
+          has an available job. *)
+       let fn = Threadsafe_queue.pop current_job_queue in
+       fn ();
+       run idx jobs
+     | Some job ->
+       (* Successfully stole a job *)
+       job ();
+       run idx jobs)
   | Some job ->
     job ();
     run idx jobs
 ;;
 
 let create () =
-  let size = Domain.recommended_domain_count in
+  let size = Domain.recommended_domain_count () in
   let jobs = Array.init size (fun _ -> Threadsafe_queue.create ()) in
   let run idx = run idx jobs in
   let domains = Array.init size (fun idx -> Domain.spawn (fun () -> run idx)) in

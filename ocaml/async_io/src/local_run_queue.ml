@@ -62,25 +62,25 @@ let perform_io ~timeout t =
   | `Timeout -> false
   | `Ok ->
     Poll.iter_ready t.poll ~f:(fun fd event ->
-        if event.Poll.Event.readable
-        then (
-          try
-            let k = Fd_table.find t.fd_events fd in
-            Fd_table.remove t.fd_events fd;
-            let job () = Effect.Deep.continue k () in
-            push_local t job
-          with
-          | Not_found -> ());
-        if event.Poll.Event.writable
-        then (
-          try
-            let k = Fd_table.find t.fd_events fd in
-            Fd_table.remove t.fd_events fd;
-            let job () = Effect.Deep.continue k () in
-            push_local t job
-          with
-          | Not_found -> ());
-        Poll.set t.poll fd Poll.Event.none);
+      if event.Poll.Event.readable
+      then (
+        try
+          let k = Fd_table.find t.fd_events fd in
+          Fd_table.remove t.fd_events fd;
+          let job () = Effect.Deep.continue k () in
+          push_local t job
+        with
+        | Not_found -> ());
+      if event.Poll.Event.writable
+      then (
+        try
+          let k = Fd_table.find t.fd_events fd in
+          Fd_table.remove t.fd_events fd;
+          let job () = Effect.Deep.continue k () in
+          push_local t job
+        with
+        | Not_found -> ());
+      Poll.set t.poll fd Poll.Event.none);
     Poll.clear t.poll;
     true
 ;;
@@ -152,7 +152,7 @@ let run t =
         then (
           let now = Mtime_clock.now () in
           Timer.advance_timer t.timer ~now ~push:(fun k ->
-              push_local t (fun () -> Effect.Deep.continue k ()));
+            push_local t (fun () -> Effect.Deep.continue k ()));
           Timer.next_wakeup_at ~now t.timer)
         else Poll.Timeout.after 50_000_000L
       in

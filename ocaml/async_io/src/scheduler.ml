@@ -21,7 +21,7 @@ let enqueue t job =
 let create ?num_threads () =
   let num_threads =
     match num_threads with
-    | None -> Domain.recommended_domain_count
+    | None -> Domain.recommended_domain_count ()
     | Some c -> c
   in
   if num_threads < 1
@@ -43,8 +43,8 @@ let run ?num_threads main =
     then [||]
     else
       Array.init (t.size - 1) (fun i ->
-          let q = t.queues.(i + 1) in
-          Domain.spawn (fun () -> Local_run_queue.run q))
+        let q = t.queues.(i + 1) in
+        Domain.spawn (fun () -> Local_run_queue.run q))
   in
   Local_run_queue.run t.queue;
   Array.iter (fun d -> Domain.join d) domains

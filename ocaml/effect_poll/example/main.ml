@@ -23,8 +23,8 @@ let echo_loop sock =
       | `Eof -> ()
       | `Ok count ->
         (match Effect_poll.write sock buf ~pos:0 ~len:count with
-        | `Eof -> ()
-        | `Ok _ -> loop sock buf)
+         | `Eof -> ()
+         | `Ok _ -> loop sock buf)
     in
     loop sock buf;
     close_sock sock

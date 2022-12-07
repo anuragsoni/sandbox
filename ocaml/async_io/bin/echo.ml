@@ -16,33 +16,33 @@ let echo_loop fd =
     let rec loop fd buf =
       match
         Fd.syscall fd buf (fun fd buf ->
-            match Unix.read fd buf 0 1024 with
-            | 0 -> `Eof
-            | n -> `Read_some n
-            | exception Unix.Unix_error ((EWOULDBLOCK | EAGAIN | EINTR), _, _) ->
-              `Poll_again
-            | exception
-                Unix.Unix_error
-                  ( ( EPIPE
-                    | ECONNRESET
-                    | EHOSTUNREACH
-                    | ENETDOWN
-                    | ENETRESET
-                    | ENETUNREACH
-                    | ETIMEDOUT )
-                  , _
-                  , _ ) -> `Eof
-            | exception exn ->
-              Printf.printf "%s\n%!" (Printexc.to_string exn);
-              `Eof)
+          match Unix.read fd buf 0 1024 with
+          | 0 -> `Eof
+          | n -> `Read_some n
+          | exception Unix.Unix_error ((EWOULDBLOCK | EAGAIN | EINTR), _, _) ->
+            `Poll_again
+          | exception
+              Unix.Unix_error
+                ( ( EPIPE
+                  | ECONNRESET
+                  | EHOSTUNREACH
+                  | ENETDOWN
+                  | ENETRESET
+                  | ENETUNREACH
+                  | ETIMEDOUT )
+                , _
+                , _ ) -> `Eof
+          | exception exn ->
+            Printf.printf "%s\n%!" (Printexc.to_string exn);
+            `Eof)
       with
       | `Already_closed -> ()
       | `Error exn -> Printf.printf "%s\n%!" (Printexc.to_string exn)
       | `Ok `Eof -> ()
       | `Ok `Poll_again ->
         (match Fd.ready_to fd `Read with
-        | `Ready -> loop fd buf
-        | `Closed -> ())
+         | `Ready -> loop fd buf
+         | `Closed -> ())
       | `Ok (`Read_some count) ->
         ignore (Fd.syscall_exn fd () (fun fd () -> Unix.write fd buf 0 count));
         loop fd buf
@@ -55,28 +55,28 @@ let echo_loop fd =
 
 let rec accept fd =
   Fd.syscall_exn fd () (fun sock () ->
-      match Unix.accept sock with
-      | client_sock, _ ->
-        Unix.set_nonblock client_sock;
-        `Ok (Fd.create client_sock)
-      | exception Unix.Unix_error ((EWOULDBLOCK | EAGAIN | EINTR), _, _) ->
-        (match Fd.ready_to fd `Read with
-        | `Ready -> accept fd
-        | `Closed -> `Eof)
-      | exception
-          Unix.Unix_error
-            ( ( EPIPE
-              | ECONNRESET
-              | EHOSTUNREACH
-              | ENETDOWN
-              | ENETRESET
-              | ENETUNREACH
-              | ETIMEDOUT )
-            , _
-            , _ ) -> `Eof
-      | exception exn ->
-        Printf.printf "%s\n%!" (Printexc.to_string exn);
-        `Eof)
+    match Unix.accept sock with
+    | client_sock, _ ->
+      Unix.set_nonblock client_sock;
+      `Ok (Fd.create client_sock)
+    | exception Unix.Unix_error ((EWOULDBLOCK | EAGAIN | EINTR), _, _) ->
+      (match Fd.ready_to fd `Read with
+       | `Ready -> accept fd
+       | `Closed -> `Eof)
+    | exception
+        Unix.Unix_error
+          ( ( EPIPE
+            | ECONNRESET
+            | EHOSTUNREACH
+            | ENETDOWN
+            | ENETRESET
+            | ENETUNREACH
+            | ETIMEDOUT )
+          , _
+          , _ ) -> `Eof
+    | exception exn ->
+      Printf.printf "%s\n%!" (Printexc.to_string exn);
+      `Eof)
 ;;
 
 let () =
@@ -89,15 +89,15 @@ let () =
   let sock = create_sock port in
   Printf.printf "Listening on http://localhost:%d\n%!" port;
   Scheduler.run ?num_threads (fun () ->
-      let stop = ref false in
-      try
-        while not !stop do
-          match accept sock with
-          | `Ok client_sock -> Task.spawn (fun () -> echo_loop client_sock)
-          | `Eof -> stop := true
-        done
-      with
-      | exn ->
-        Printf.printf "%s\n%!" (Printexc.to_string exn);
-        Fd.close sock)
+    let stop = ref false in
+    try
+      while not !stop do
+        match accept sock with
+        | `Ok client_sock -> Task.spawn (fun () -> echo_loop client_sock)
+        | `Eof -> stop := true
+      done
+    with
+    | exn ->
+      Printf.printf "%s\n%!" (Printexc.to_string exn);
+      Fd.close sock)
 ;;

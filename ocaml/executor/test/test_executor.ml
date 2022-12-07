@@ -39,33 +39,33 @@ module Promise = struct
     | Pending ->
       Mutex.lock t.mutex;
       (match t.state with
-      | Resolved v ->
-        Mutex.unlock t.mutex;
-        v
-      | Failed (exn, bt) ->
-        Mutex.unlock t.mutex;
-        Printexc.raise_with_backtrace exn bt
-      | Pending ->
-        Condition.wait t.cond t.mutex;
-        Mutex.unlock t.mutex;
-        (match t.state with
-        | Resolved v -> v
-        | Failed (exn, bt) -> Printexc.raise_with_backtrace exn bt
-        | Pending -> assert false))
+       | Resolved v ->
+         Mutex.unlock t.mutex;
+         v
+       | Failed (exn, bt) ->
+         Mutex.unlock t.mutex;
+         Printexc.raise_with_backtrace exn bt
+       | Pending ->
+         Condition.wait t.cond t.mutex;
+         Mutex.unlock t.mutex;
+         (match t.state with
+          | Resolved v -> v
+          | Failed (exn, bt) -> Printexc.raise_with_backtrace exn bt
+          | Pending -> assert false))
   ;;
 end
 
 let execute_task executor fn =
   let p = Promise.create () in
   Executor.async executor (fun () ->
-      Printf.printf "Hello from %d\n%!" (Domain.self () :> int);
-      try
-        let v = fn () in
-        Promise.fill p v
-      with
-      | exn ->
-        let bt = Printexc.get_raw_backtrace () in
-        Promise.fail p exn bt);
+    Printf.printf "Hello from %d\n%!" (Domain.self () :> int);
+    try
+      let v = fn () in
+      Promise.fill p v
+    with
+    | exn ->
+      let bt = Printexc.get_raw_backtrace () in
+      Promise.fail p exn bt);
   p
 ;;
 
@@ -81,9 +81,9 @@ let () =
   Promise.read promise_a;
   let boom =
     execute_task executor (fun () ->
-        Unix.sleep 2;
-        (* This is bad *)
-        Promise.fill promise_a ())
+      Unix.sleep 2;
+      (* This is bad *)
+      Promise.fill promise_a ())
   in
   Promise.read boom
 ;;
