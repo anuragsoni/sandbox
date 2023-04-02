@@ -1,8 +1,8 @@
 (executable
  (name main)
  (foreign_stubs
-   (language c)
-   (names ffi_example_stubs))
+  (language c)
+  (names ffi_example_stubs))
  (foreign_archives camel_ffi))
 
 (rule
