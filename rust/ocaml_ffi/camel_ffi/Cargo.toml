@@ -9,4 +9,4 @@ edition = "2021"
 libc = "0.2.140"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["staticlib"]

@@ -1,2 +1,18 @@
 (executable
- (name main))
+ (name main)
+ (foreign_stubs
+   (language c)
+   (names ffi_example_stubs))
+ (foreign_archives camel_ffi))
+
+(rule
+ (deps
+  (source_tree ../camel_ffi))
+ (targets libcamel_ffi.a)
+ (action
+  (no-infer
+   (progn
+    (chdir
+     ../camel_ffi
+     (run cargo build --profile=release))
+    (copy ../camel_ffi/target/release/libcamel_ffi.a libcamel_ffi.a)))))
