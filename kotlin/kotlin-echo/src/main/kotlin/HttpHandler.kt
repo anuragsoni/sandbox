@@ -7,12 +7,16 @@ import io.netty.handler.codec.http.HttpHeaderValues
 import io.netty.handler.codec.http.HttpObject
 import io.netty.handler.codec.http.HttpRequest
 import io.netty.handler.codec.http.HttpResponseStatus
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
 
-class HttpHandler(val dispatcher: CoroutineDispatcher, val handler: suspend (Request) -> Response) :
+class HttpHandler(val handler: suspend (Request) -> Response) :
     SimpleChannelInboundHandler<HttpObject>() {
+
+    private lateinit var dispatcher: ExecutorCoroutineDispatcher
+
+    override fun channelActive(ctx: ChannelHandlerContext) {
+        dispatcher = ctx.executor().asCoroutineDispatcher()
+    }
 
     override fun channelRead0(ctx: ChannelHandlerContext, msg: HttpObject) {
         if (msg is HttpRequest) {

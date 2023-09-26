@@ -5,7 +5,6 @@ import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.NioServerSocketChannel
 import io.netty.handler.codec.http.HttpServerCodec
-import kotlinx.coroutines.asCoroutineDispatcher
 
 val payload = "Hello World"
 
@@ -28,13 +27,13 @@ fun main() {
             .group(parentGroup, workerGroup)
             .channel(NioServerSocketChannel::class.java)
             .option(ChannelOption.SO_BACKLOG, 11_000)
+            .childOption(ChannelOption.TCP_NODELAY, true)
             .childHandler(
                 object : ChannelInitializer<SocketChannel>() {
                     override fun initChannel(ch: SocketChannel) {
                         val pipeline = ch.pipeline()
                         pipeline.addLast(HttpServerCodec())
-                        pipeline.addLast(
-                            HttpHandler(workerGroup.asCoroutineDispatcher(), ::httpHandler))
+                        pipeline.addLast(HttpHandler(::httpHandler))
                     }
                 })
 
